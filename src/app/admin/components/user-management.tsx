@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { UserPlus, Users, ClipboardList } from 'lucide-react';
+import { UserPlus, Users, ClipboardList, Trash2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 
 interface User {
@@ -31,6 +31,7 @@ interface UserGroup {
 interface Survey {
   _id: string;
   title: string;
+  status: string
   assignedGroups: string[];
 }
 
@@ -135,6 +136,26 @@ export default function UserManagement() {
   const [newPassword, setNewPassword] = useState('');
   const { toast } = useToast();
 
+  async function deleteUser(userId: string) {
+    const response = await fetch(`/api/users/${userId}`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to delete user');
+    }
+  }
+
+  async function deleteGroup(groupId: string) {
+    const response = await fetch(`/api/groups/${groupId}`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to delete group');
+    }
+  }
+
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -143,9 +164,11 @@ export default function UserManagement() {
           fetchGroups(),
           fetchSurveys(),
         ]);
+        const activeSurveys = surveysData.filter((survey) => survey?.status === 'active');
+
         setUsers(usersData);
         setGroups(groupsData);
-        setSurveys(surveysData);
+        setSurveys(activeSurveys);
       } catch (error) {
         console.error(error);
         toast({
@@ -281,6 +304,45 @@ export default function UserManagement() {
     }
   };
 
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      await deleteUser(userId);
+      setUsers(users.filter(user => user._id !== userId));
+      toast({
+        title: "Success",
+        description: "User deleted successfully",
+        variant: "success",
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Error",
+        description: "Failed to delete user",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    try {
+      await deleteGroup(groupId);
+      setGroups(groups.filter(group => group._id !== groupId));
+      toast({
+        title: "Success",
+        description: "Group deleted successfully",
+        variant: "success",
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Error",
+        description: "Failed to delete group",
+        variant: "destructive",
+      });
+    }
+  };
+
+
   return (
     <div className="container mx-auto p-4 space-y-4">
       <div className="flex justify-between items-center">
@@ -363,15 +425,27 @@ export default function UserManagement() {
                   </SelectContent>
                 </Select>
               </TableCell>
-              <TableCell>{user.groups ? user.groups.join(', ') : ''}</TableCell>
+              <TableCell> {user.groups.map((groupId) => {
+                const group = groups.find((g) => g._id === groupId);
+                return group ? group.name : '';
+              }).join(', ')}</TableCell>
               <TableCell>{new Date(user.createdAt).toLocaleDateString()}</TableCell>
               <TableCell>{new Date(user.updatedAt).toLocaleDateString()}</TableCell>
+              <TableCell>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleDeleteUser(user._id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
 
-      <div className="flex space-x-4">
+      <div className="grid lg:grid-cols-2 sm:grid-cols-1 gap-4 ">
         <Dialog>
           <DialogTrigger asChild>
             <Button>
@@ -459,6 +533,15 @@ export default function UserManagement() {
                     })
                     .join(', ')
                   : 'No assigned surveys'}
+              </TableCell>
+              <TableCell>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleDeleteGroup(group._id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </TableCell>
             </TableRow>
           ))}

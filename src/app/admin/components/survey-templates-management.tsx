@@ -8,14 +8,15 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Edit, Trash2, Save, ChevronDown, ChevronUp, Copy } from "lucide-react"
+import { Slider } from "@/components/ui/slider"
+import { Plus, Edit, Trash2, Save, ChevronDown, ChevronUp, Copy } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
 
 interface Question {
   id: string
-  type: 'multiple-choice' | 'text-input' | 'rating-scale'
+  type: 'multiple-choice' | 'text-input' | 'rating-scale' | 'dropdown' | 'slider'
   text: string
   options?: string[]
   required: boolean
@@ -35,6 +36,8 @@ const questionTypes = [
   { id: "multiple-choice", name: "Multiple Choice" },
   { id: "text-input", name: "Text Input" },
   { id: "rating-scale", name: "Rating Scale" },
+  { id: "dropdown", name: "Dropdown" },
+  { id: "slider", name: "Slider" },
 ] as const
 
 export default function SurveyTemplateManagement() {
@@ -52,6 +55,7 @@ export default function SurveyTemplateManagement() {
   const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(new Set())
   const { toast } = useToast()
   const router = useRouter()
+  const [showExistingDialog, setShowExistingDialog] = useState(false)
   const { data: session, status } = useSession()
 
   useEffect(() => {
@@ -103,6 +107,20 @@ export default function SurveyTemplateManagement() {
   }
 
   const handleSaveTemplate = async () => {
+
+    if (!newTemplate.title.trim()) {
+      toast({ title: "Error", description: "Please enter a survey title", variant: "destructive" })
+      return
+    }
+
+    const existingSurvey = templates.find(
+      template => template.title === newTemplate.title && template.description === newTemplate.description
+    )
+
+    if (existingSurvey && !currentTemplate) {
+      setShowExistingDialog(true)
+      return
+    }
     try {
       const templateData = { ...newTemplate, createdAt: new Date().toISOString() }
       const url = currentTemplate ? `/api/templates/${currentTemplate._id}` : "/api/templates"
@@ -139,7 +157,7 @@ export default function SurveyTemplateManagement() {
         body: JSON.stringify({
           title: `${template.title} - ${new Date().toLocaleDateString()}`,
           description: template.description,
-          creatorId: session?.user.id,
+          creatorId: session?.user?.id,
           status: "draft",
           questions: template.questions,
           assignedGroups: [],
@@ -151,7 +169,7 @@ export default function SurveyTemplateManagement() {
 
       const newSurvey = await response.json()
       toast({ title: "Success", description: `New survey created from template: ${template.title}`, variant: "success" })
-      router.push(`/admin/survey-mangement`)
+      router.push(`/admin/survey-management`)
     } catch (error) {
       console.error("Error creating survey from template:", error)
       toast({ title: "Error", description: "Failed to create survey from template", variant: "destructive" })
@@ -234,21 +252,22 @@ export default function SurveyTemplateManagement() {
     })
   }
 
+
   return (
     <div className="container mx-auto p-4 space-y-6">
-      <div className="grid place-items-center lg:grid-cols-2 sm:grid-cols-1 max-sm:grid-cols-1 max-lg:grid-cols-2 gap-6">
-        <div className="w-full">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div>
           <h1 className="text-3xl font-bold">Survey Template Management</h1>
           <p className="text-muted-foreground">Create and manage your survey templates</p>
         </div>
-        <Button onClick={handleCreateTemplate} className="w-full">
-          <Plus className="mr-2 h-4 w-full" /> Create Template
+        <Button onClick={handleCreateTemplate} className="w-full sm:w-auto">
+          <Plus className="mr-2 h-4 w-4" /> Create Template
         </Button>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {templates.map((template) => (
-          <Card key={template._id} className="flex flex-col w-fit">
+          <Card key={template._id} className="flex flex-col">
             <CardHeader>
               <CardTitle>{template.title}</CardTitle>
               <CardDescription>{template.description}</CardDescription>
@@ -282,7 +301,7 @@ export default function SurveyTemplateManagement() {
                 </div>
               )}
             </CardContent>
-            <CardFooter className="flex justify-between border-t pt-4 gap-4">
+            <CardFooter className="flex flex-wrap justify-between border-t pt-4 gap-2">
               <Button variant="outline" size="sm" onClick={() => handleEditTemplate(template)}>
                 <Edit className="mr-2 h-4 w-4" /> Edit
               </Button>
@@ -349,7 +368,8 @@ export default function SurveyTemplateManagement() {
             </div>
 
             <div>
-              <div className="flex justify-between items-center mb-2">
+              <div className="flex justify-between
+items-center mb-2">
                 <Label>Questions</Label>
                 <Button variant="outline" size="sm" onClick={handleAddQuestion}>
                   <Plus className="mr-2 h-4 w-4" /> Add Question
@@ -372,8 +392,8 @@ export default function SurveyTemplateManagement() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="flex items-start gap-3">
-                        <div className="flex-1">
+                      <div className="flex flex-col sm:flex-row items-start gap-3">
+                        <div className="flex-1 w-full">
                           <Label htmlFor={`question-${question.id}`}>Question Text</Label>
                           <Input
                             id={`question-${question.id}`}
@@ -383,12 +403,12 @@ export default function SurveyTemplateManagement() {
                             className="mt-1.5"
                           />
                         </div>
-                        <div>
+                        <div className="w-full sm:w-auto">
                           <Label htmlFor={`question-type-${question.id}`}>Type</Label>
                           <Select
                             value={question.type}
                             onValueChange={(value) => handleUpdateQuestion(question.id, { type: value as Question["type"] })}>
-                            <SelectTrigger id={`question-type-${question.id}`} className="w-40 mt-1.5">
+                            <SelectTrigger id={`question-type-${question.id}`} className="w-full sm:w-40 mt-1.5">
                               <SelectValue placeholder="Type" />
                             </SelectTrigger>
                             <SelectContent>
@@ -402,7 +422,7 @@ export default function SurveyTemplateManagement() {
                         </div>
                       </div>
 
-                      {question.type === 'multiple-choice' && (
+                      {(question.type === 'multiple-choice' || question.type === 'dropdown') && (
                         <div className="space-y-2">
                           <Label>Options</Label>
                           {question.options?.map((option, optionIndex) => (
@@ -427,7 +447,7 @@ export default function SurveyTemplateManagement() {
                         </div>
                       )}
 
-                      {question.type === 'rating-scale' && (
+                      {(question.type === 'rating-scale' || question.type === 'slider') && (
                         <div className="space-y-2">
                           <Label>Scale Range</Label>
                           <div className="flex items-center gap-2">
@@ -447,6 +467,18 @@ export default function SurveyTemplateManagement() {
                               className="w-20"
                             />
                           </div>
+                        </div>
+                      )}
+
+                      {question.type === 'slider' && (
+                        <div className="mt-2">
+                          <Label>Preview</Label>
+                          <Slider
+                            defaultValue={[question.min || 1]}
+                            max={question.max || 5}
+                            min={question.min || 1}
+                            step={1}
+                          />
                         </div>
                       )}
 
@@ -475,6 +507,21 @@ export default function SurveyTemplateManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={showExistingDialog} onOpenChange={setShowExistingDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Survey Already Exists</DialogTitle>
+            <DialogDescription>
+              A Template with the same title and description already exists. Please modify your survey details and try again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setShowExistingDialog(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
+

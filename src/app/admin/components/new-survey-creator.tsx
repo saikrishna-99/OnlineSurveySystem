@@ -16,14 +16,16 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { GripVertical, Plus, X, Save, LayoutTemplate } from "lucide-react"
+import { Slider } from "@/components/ui/slider"
+import { GripVertical, Plus, X, Save, LayoutTemplate } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 interface Question {
   id: string
-  type: "multiple-choice" | "text-input" | "rating-scale"
+  type: "multiple-choice" | "text-input" | "rating-scale" | "dropdown" | "slider"
   text: string
   options?: string[]
   required: boolean
@@ -37,7 +39,7 @@ interface ISurvey {
   creatorId: string
   status: "draft" | "active" | "closed"
   questions: Question[]
-  assignedGroups: string[] // Assuming we're using string IDs for simplicity
+  assignedGroups: string[]
   theme?: string
 }
 
@@ -55,6 +57,8 @@ export default function SurveyBuilder() {
   const [activeTab, setActiveTab] = useState("builder")
   const { toast } = useToast()
   const router = useRouter()
+  const [showExistingDialog, setShowExistingDialog] = useState(false)
+  const [existingItemType, setExistingItemType] = useState<'survey' | 'template' | null>(null)
 
   useEffect(() => {
     if (status === "authenticated" && session?.user?.id) {
@@ -65,14 +69,14 @@ export default function SurveyBuilder() {
     }
   }, [status, session])
 
-  const addQuestion = (type: "text-input" | "multiple-choice" | "rating-scale") => {
+  const addQuestion = (type: "text-input" | "multiple-choice" | "rating-scale" | "dropdown" | "slider") => {
     const newQuestion: Question = {
       id: `question-${Date.now()}`,
       type,
       text: "",
-      options: type === "multiple-choice" ? ["Option 1"] : undefined,
+      options: type === "multiple-choice" || type === "dropdown" ? ["Option 1"] : undefined,
       required: false,
-      ...(type === "rating-scale" && { min: 1, max: 5 }),
+      ...(type === "rating-scale" || type === "slider" ? { min: 1, max: 5 } : {}),
     }
     setSurvey({ ...survey, questions: [...survey.questions, newQuestion] })
   }
@@ -91,6 +95,46 @@ export default function SurveyBuilder() {
     })
   }
 
+
+
+  const checkExistingSurvey = async (title: string, description: string) => {
+    try {
+      const response = await fetch("/api/surveys/check-existing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description }),
+      })
+
+      if (!response.ok) throw new Error("Failed to check existing surveys")
+
+      const { exists } = await response.json()
+      return exists
+    } catch (error) {
+      console.error("Error checking existing surveys:", error)
+      return false
+    }
+  }
+
+  const checkExistingTemplate = async (title: string, description: string) => {
+    try {
+      const response = await fetch("/api/templates/check-existing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description }),
+      })
+
+      if (!response.ok) throw new Error("Failed to check existing templates")
+
+      const { exists } = await response.json()
+      return exists
+    } catch (error) {
+      console.error("Error checking existing templates:", error)
+      return false
+    }
+  }
+
+
+
   const handlePublish = async () => {
     if (!survey.title.trim()) {
       toast({ title: "Error", description: "Please enter a survey title", variant: "destructive" })
@@ -108,12 +152,19 @@ export default function SurveyBuilder() {
     }
 
     try {
+      const exists = await checkExistingSurvey(survey.title, survey.description || "")
+      if (exists) {
+        setExistingItemType('survey')
+        setShowExistingDialog(true)
+        return
+      }
+
       const response = await fetch("/api/surveys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...survey,
-          status: "active" // Change status to active when publishing
+          status: "active"
         }),
       })
 
@@ -144,6 +195,12 @@ export default function SurveyBuilder() {
     }
 
     try {
+      const exists = await checkExistingTemplate(survey.title, survey.description || "")
+      if (exists) {
+        setExistingItemType('template')
+        setShowExistingDialog(true)
+        return
+      }
       const response = await fetch("/api/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -186,7 +243,7 @@ export default function SurveyBuilder() {
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <Select
               value={question.type}
-              onValueChange={(value: "text-input" | "multiple-choice" | "rating-scale") =>
+              onValueChange={(value: "text-input" | "multiple-choice" | "rating-scale" | "dropdown" | "slider") =>
                 updateQuestion(question.id, { type: value })
               }
             >
@@ -197,6 +254,8 @@ export default function SurveyBuilder() {
                 <SelectItem value="text-input">Text Input</SelectItem>
                 <SelectItem value="multiple-choice">Multiple Choice</SelectItem>
                 <SelectItem value="rating-scale">Rating Scale</SelectItem>
+                <SelectItem value="dropdown">Dropdown</SelectItem>
+                <SelectItem value="slider">Slider</SelectItem>
               </SelectContent>
             </Select>
             <Button variant="ghost" size="icon" onClick={() => removeQuestion(question.id)}>
@@ -205,7 +264,7 @@ export default function SurveyBuilder() {
           </div>
         </CardHeader>
         <CardContent>
-          {question.type === "multiple-choice" && (
+          {(question.type === "multiple-choice" || question.type === "dropdown") && (
             <div className="space-y-2">
               {question.options?.map((option, index) => (
                 <div key={index} className="flex items-center space-x-2">
@@ -236,7 +295,7 @@ export default function SurveyBuilder() {
                 onClick={() => {
                   const newOptions = [
                     ...(question.options || []),
-                    `Option ${question.options?.length || 0 + 1}`,
+                    `Option ${(question.options?.length || 0) + 1}`,
                   ]
                   updateQuestion(question.id, { options: newOptions })
                 }}
@@ -245,20 +304,33 @@ export default function SurveyBuilder() {
               </Button>
             </div>
           )}
-          {question.type === "rating-scale" && (
-            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-              <Input
-                type="number"
-                value={question.min}
-                onChange={(e) => updateQuestion(question.id, { min: Number(e.target.value) })}
-                placeholder="Min"
-              />
-              <Input
-                type="number"
-                value={question.max}
-                onChange={(e) => updateQuestion(question.id, { max: Number(e.target.value) })}
-                placeholder="Max"
-              />
+          {(question.type === "rating-scale" || question.type === "slider") && (
+            <div className="space-y-2">
+              <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                <Input
+                  type="number"
+                  value={question.min}
+                  onChange={(e) => updateQuestion(question.id, { min: Number(e.target.value) })}
+                  placeholder="Min"
+                />
+                <Input
+                  type="number"
+                  value={question.max}
+                  onChange={(e) => updateQuestion(question.id, { max: Number(e.target.value) })}
+                  placeholder="Max"
+                />
+              </div>
+              {question.type === "slider" && (
+                <div className="mt-2">
+                  <Label>Preview</Label>
+                  <Slider
+                    defaultValue={[question.min || 1]}
+                    max={question.max || 5}
+                    min={question.min || 1}
+                    step={1}
+                  />
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -314,6 +386,34 @@ export default function SurveyBuilder() {
                 )}
               </div>
             )}
+            {question.type === "dropdown" && (
+              <Select>
+                <SelectTrigger className="w-full mt-2">
+                  <SelectValue placeholder="Select an option" />
+                </SelectTrigger>
+                <SelectContent>
+                  {question.options?.map((option, index) => (
+                    <SelectItem key={index} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {question.type === "slider" && (
+              <div className="mt-4">
+                <Slider
+                  defaultValue={[question.min || 1]}
+                  max={question.max || 5}
+                  min={question.min || 1}
+                  step={1}
+                />
+                <div className="flex justify-between text-sm text-gray-600 mt-2">
+                  <span>{question.min || 1}</span>
+                  <span>{question.max || 5}</span>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       ))}
@@ -366,6 +466,14 @@ export default function SurveyBuilder() {
                 <Plus className="mr-2 h-4 w-4" />
                 Add Rating Scale
               </Button>
+              <Button onClick={() => addQuestion("dropdown")} variant="outline">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Dropdown
+              </Button>
+              <Button onClick={() => addQuestion("slider")} variant="outline">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Slider
+              </Button>
             </div>
           </div>
         </TabsContent>
@@ -382,6 +490,20 @@ export default function SurveyBuilder() {
           Save as Template
         </Button>
       </div>
+      <Dialog open={showExistingDialog} onOpenChange={setShowExistingDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{existingItemType === 'survey' ? 'Survey' : 'Template'} Already Exists</DialogTitle>
+            <DialogDescription>
+              A {existingItemType} with the same title and description already exists. Please modify your details and try again.
+            </DialogDescription>
+          </DialogHeader>
+          <Button onClick={() => setShowExistingDialog(false)}>Close</Button>
+        </DialogContent>
+      </Dialog>
+
+
     </div>
   )
 }
+

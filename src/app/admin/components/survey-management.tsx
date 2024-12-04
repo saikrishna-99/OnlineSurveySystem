@@ -8,13 +8,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Edit, Trash2, Save, ChevronDown, ChevronUp } from "lucide-react"
+import { Slider } from "@/components/ui/slider"
+import { Plus, Edit, Trash2, Save, ChevronDown, ChevronUp } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast"
-import { useRouter } from "next/navigation"
+import { useSession } from "next-auth/react"
 
 interface Question {
   id: string
-  type: 'multiple-choice' | 'text-input' | 'rating-scale'
+  type: 'multiple-choice' | 'text-input' | 'rating-scale' | 'dropdown' | 'slider'
   text: string
   options?: string[]
   required: boolean
@@ -44,9 +45,12 @@ const questionTypes = [
   { id: "multiple-choice", name: "Multiple Choice" },
   { id: "text-input", name: "Text Input" },
   { id: "rating-scale", name: "Rating Scale" },
+  { id: "dropdown", name: "Dropdown" },
+  { id: "slider", name: "Slider" },
 ] as const
 
 export default function SurveyManagement() {
+  const { data: session } = useSession()
   const [surveys, setSurveys] = useState<Survey[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -55,15 +59,15 @@ export default function SurveyManagement() {
   const [newSurvey, setNewSurvey] = useState<Survey>({
     title: "",
     description: "",
-    creatorId: "", // This should be set to the current user's ID in a real application
+    creatorId: "",
     status: "draft",
     questions: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   })
   const [expandedSurveys, setExpandedSurveys] = useState<Set<string>>(new Set())
+  const [showExistingDialog, setShowExistingDialog] = useState(false)
   const { toast } = useToast()
-  const router = useRouter()
 
   useEffect(() => {
     fetchSurveys()
@@ -86,7 +90,7 @@ export default function SurveyManagement() {
     setNewSurvey({
       title: "",
       description: "",
-      creatorId: "",
+      creatorId: session?.user?.id as string,
       status: "draft",
       questions: [],
       createdAt: new Date().toISOString(),
@@ -117,6 +121,21 @@ export default function SurveyManagement() {
   }
 
   const handleSaveSurvey = async () => {
+
+
+    if (!newSurvey.title.trim()) {
+      toast({ title: "Error", description: "Please enter a survey title", variant: "destructive" })
+      return
+    }
+
+    const existingSurvey = surveys.find(
+      survey => survey.title === newSurvey.title && survey.description === newSurvey.description
+    )
+
+    if (existingSurvey && !currentSurvey) {
+      setShowExistingDialog(true)
+      return
+    }
     try {
       const surveyData = { ...newSurvey, updatedAt: new Date().toISOString() }
       const url = currentSurvey ? `/api/surveys/${currentSurvey._id}` : "/api/surveys"
@@ -138,7 +157,7 @@ export default function SurveyManagement() {
       }
 
       setIsDialogOpen(false)
-      toast({ title: "Success", description: `Survey ${currentSurvey ? "updated" : "created"} successfully` })
+      toast({ title: "Success", description: `Survey ${currentSurvey ? "updated" : "created"} successfully`, variant: "success" })
     } catch (error) {
       console.error("Error saving survey:", error)
       toast({ title: "Error", description: "Failed to save survey", variant: "destructive" })
@@ -322,7 +341,10 @@ export default function SurveyManagement() {
                 <Input
                   id="surveyTitle"
                   value={newSurvey.title}
-                  onChange={(e) => setNewSurvey({ ...newSurvey, title: e.target.value })}
+                  onChange={(e) => setNewSurvey({
+                    ...newSurvey,
+                    title: e.target.value
+                  })}
                   placeholder="Enter survey title"
                   className="mt-1.5"
                 />
@@ -332,7 +354,10 @@ export default function SurveyManagement() {
                 <Label htmlFor="surveyStatus">Status</Label>
                 <Select
                   value={newSurvey.status}
-                  onValueChange={(value) => setNewSurvey({ ...newSurvey, status: value as 'draft' | 'active' | 'closed' })}>
+                  onValueChange={(value) => setNewSurvey({
+                    ...newSurvey,
+                    status: value as 'draft' | 'active' | 'closed'
+                  })}>
                   <SelectTrigger className="w-full mt-1.5">
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
@@ -349,6 +374,7 @@ export default function SurveyManagement() {
 
             <div>
               <Label htmlFor="surveyDescription">Description</Label>
+
               <Textarea
                 id="surveyDescription"
                 value={newSurvey.description}
@@ -415,7 +441,7 @@ export default function SurveyManagement() {
                         </div>
                       </div>
 
-                      {question.type === 'multiple-choice' && (
+                      {(question.type === 'multiple-choice' || question.type === 'dropdown') && (
                         <div className="space-y-2">
                           <Label>Options</Label>
                           {question.options?.map((option, optionIndex) => (
@@ -440,7 +466,7 @@ export default function SurveyManagement() {
                         </div>
                       )}
 
-                      {question.type === 'rating-scale' && (
+                      {(question.type === 'rating-scale' || question.type === 'slider') && (
                         <div className="space-y-2">
                           <Label>Scale Range</Label>
                           <div className="flex items-center gap-2">
@@ -460,6 +486,18 @@ export default function SurveyManagement() {
                               className="w-20"
                             />
                           </div>
+                        </div>
+                      )}
+
+                      {question.type === 'slider' && (
+                        <div className="space-y-2">
+                          <Label>Preview</Label>
+                          <Slider
+                            defaultValue={[question.min || 1]}
+                            max={question.max || 5}
+                            min={question.min || 1}
+                            step={1}
+                          />
                         </div>
                       )}
 
@@ -488,6 +526,21 @@ export default function SurveyManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={showExistingDialog} onOpenChange={setShowExistingDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Survey Already Exists</DialogTitle>
+            <DialogDescription>
+              A survey with the same title and description already exists. Please modify your survey details and try again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setShowExistingDialog(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
+
