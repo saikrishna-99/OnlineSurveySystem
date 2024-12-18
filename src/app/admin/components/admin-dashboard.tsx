@@ -124,7 +124,7 @@ export default function AdminDashboard({ surveys, responses }: AdminDashboardPro
     const averageTime = selectedSurveyResponses.reduce((sum, r) => {
       const responseTime = new Date(r.submittedAt).getTime() - surveyCreatedAt
       return sum + responseTime
-    }, 0) / (totalResponses * 60000) || 0 // Convert to minutes
+    }, 0) / (totalResponses * 3600000) || 0 // Convert to minutes
 
     setSurveyData(processedSurveyData)
     setResponseData(processedResponseData)
